@@ -1,9 +1,12 @@
-
 from .task import Task
 from .utils import flat_list
 
 
 class TaskGraph:
+    """DAG of tasks and data objects that represents a computation.
+
+    :param tasks: list of :class:`.Task`
+    """
 
     def __init__(self, tasks=None):
         if tasks is None:
@@ -19,21 +22,24 @@ class TaskGraph:
             self.tasks = tasks
             self.outputs = outputs
 
-    def _copy_tasks(self):
-        tasks = [task.simple_copy() for task in self.tasks]
-        outputs = flat_list(task.outputs for task in tasks)
-
-        for old_task, task in zip(self.tasks, tasks):
-            for inp in old_task.inputs:
-                task.add_input(outputs[inp.id])
-        return tasks
-
-    def copy(self):
-        return TaskGraph(tasks=self._copy_tasks())
+    @staticmethod
+    def merge(task_graphs):
+        """Merges a list of task graphs into one task graph"""
+        tasks = flat_list(tg._copy_tasks() for tg in task_graphs)
+        return TaskGraph(tasks=tasks)
 
     @property
     def task_count(self):
         return len(self.tasks)
+
+    @property
+    def arcs(self):
+        for task in self.tasks:
+            for t in task.inputs:
+                yield (task, t)
+
+    def copy(self):
+        return TaskGraph(tasks=self._copy_tasks())
 
     def new_task(self,
                  name=None,
@@ -42,6 +48,7 @@ class TaskGraph:
                  expected_duration=None,
                  cpus=1,
                  output_size=None):
+        """Adds a new task to the graph"""
         task = Task(name, outputs, duration, cpus, output_size, expected_duration)
         task.id = len(self.tasks)
 
@@ -55,17 +62,24 @@ class TaskGraph:
 
         return task
 
+    def remove_task(self, task):
+        """Removes a task from the graph"""
+        outputs = self.outputs
+        for o in task.outputs:
+            outputs.remove(o)
+            for t in o.consumers:
+                t.inputs.remove(o)
+        self.tasks.remove(task)
+        for o in task.inputs:
+            o.consumers.remove(task)
+
     def source_tasks(self):
+        """Returns the root tasks with no dependencies"""
         return [t for t in self.tasks if not t.inputs]
 
     def leaf_tasks(self):
+        """Returns the tasks that have no dependent tasks"""
         return [t for t in self.tasks if t.is_leaf]
-
-    @property
-    def arcs(self):
-        for task in self.tasks:
-            for t in task.inputs:
-                yield (task, t)
 
     def validate(self):
         tasks = set(self.tasks)
@@ -89,7 +103,8 @@ class TaskGraph:
         for t in self.tasks:
             t.normalize()
 
-    def to_dot(self, name, verbose=False):
+    def to_dot(self, name):
+        """Renders the graph to a DOT string"""
         stream = ["digraph ", name, " {\n"]
 
         for task in self.tasks:
@@ -110,6 +125,7 @@ class TaskGraph:
         return "".join(stream)
 
     def write_dot(self, filename):
+        """Writes the graph in the DOT format to a file"""
         dot = self.to_dot("g")
         with open(filename, "w") as f:
             f.write(dot)
@@ -117,17 +133,11 @@ class TaskGraph:
     def __repr__(self):
         return "<TaskGraph #t={}>".format(len(self.tasks))
 
-    @staticmethod
-    def merge(task_graphs):
-        tasks = flat_list(tg._copy_tasks() for tg in task_graphs)
-        return TaskGraph(tasks=tasks)
+    def _copy_tasks(self):
+        tasks = [task.simple_copy() for task in self.tasks]
+        outputs = flat_list(task.outputs for task in tasks)
 
-    def remove_task(self, task):
-        outputs = self.outputs
-        for o in task.outputs:
-            outputs.remove(o)
-            for t in o.consumers:
-                t.inputs.remove(o)
-        self.tasks.remove(task)
-        for o in task.inputs:
-            o.consumers.remove(task)
+        for old_task, task in zip(self.tasks, tasks):
+            for inp in old_task.inputs:
+                task.add_input(outputs[inp.id])
+        return tasks

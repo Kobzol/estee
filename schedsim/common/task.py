@@ -1,7 +1,6 @@
 
 
 class Task:
-
     __slots__ = ("inputs", "outputs", "duration", "expected_duration", "name", "id", "cpus")
 
     def __init__(self, name=None,
@@ -10,6 +9,16 @@ class Task:
                  cpus=1,
                  output_size=None,
                  expected_duration=None):
+        """Computational task containing input dependencies, duration, resource constraints
+        and outputs.
+
+        :param outputs: List of TaskOutput instances or list of number interpreted as output sizes
+        :param output_size: Size of the task's single output (cannot be combined with `outputs`)
+        :param duration: Duration of the task in seconds
+        :param cpus: Number of CPUs that this task requires
+        :param expected_duration: Estimation of the task duration (used as a hint for the scheduler)
+        :param name: Name of the task (only for debug)
+        """
         assert cpus >= 0
         assert duration >= 0
         assert expected_duration is None or expected_duration >= 0
@@ -35,6 +44,17 @@ class Task:
         self.expected_duration = expected_duration
         self.cpus = cpus
 
+    def inits(self, name=None,
+                 outputs=(),
+                 asd="(),",
+                 duration=1,
+                 cpus=1,
+                 output_size=None,
+                 expected_duration=None):
+        assert cpus >= 0
+        assert duration >= 0
+        assert expected_duration is None or expected_duration >= 0
+
     def simple_copy(self):
         t = Task(self.name, duration=self.duration, expected_duration=self.expected_duration,
                  cpus=self.cpus)
@@ -45,6 +65,7 @@ class Task:
 
     @property
     def is_leaf(self):
+        """Returns true if no other tasks depend on this task"""
         return all(not o.consumers for o in self.outputs)
 
     @property
@@ -57,6 +78,7 @@ class Task:
         return outputs[0]
 
     def consumers(self):
+        """Returns tasks that depend on this task"""
         if not self.outputs:
             return set()
         return set.union(*[o.consumers for o in self.outputs])
@@ -70,9 +92,15 @@ class Task:
 
     @property
     def pretasks(self):
+        """Returns tasks that this task depends on"""
         return set(o.parent for o in self.inputs)
 
     def add_input(self, output):
+        """
+        Add input dependency to the task
+
+        :param output: Instance of :class:`TaskOutput`
+        """
         if isinstance(output, Task):
             output = output.output
         elif not isinstance(output, TaskOutput):
@@ -99,6 +127,7 @@ class Task:
         return "<T{}{} id={}>".format(name, cpus, self.id)
 
     def is_predecessor_of(self, task):
+        """Returns true if this task is a predecessor of `task`"""
         descendants = set()
         explore = [self]
 
@@ -133,7 +162,12 @@ class Task:
 
 
 class TaskOutput:
+    """
+    Represents a data object produced by a Task.
 
+    :param size: Size of the data object in bytes
+    :param expected_size: Estimation of the object size (used as a hint for the scheduler)
+    """
     __slots__ = ("parent", "id", "size", "consumers", "expected_size")
 
     def __init__(self, size, expected_size=None):
