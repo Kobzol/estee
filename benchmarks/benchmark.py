@@ -71,6 +71,7 @@ IMODES = {
 
 SCHED_TIMINGS = {
     # min_sched_interval, sched_time
+    "0/0": (0, 0),
     "0.1/0.05": (0.1, 0.05),
     "0.4/0.05": (0.4, 0.05),
     "1.6/0.05": (1.6, 0.05),
@@ -91,7 +92,12 @@ def run_single_instance(instance):
     netmodel = NETMODELS[instance.netmodel](instance.bandwidth)
     scheduler = SCHEDULERS[instance.scheduler_name]()
     simulator = Simulator(instance.graph, workers, scheduler, netmodel)
-    return simulator.run(), time.monotonic() - begin_time
+
+    try:
+        return simulator.run(), time.monotonic() - begin_time
+    except Exception as e:
+        print(instance)
+        raise e
 
 
 def benchmark_scheduler(instance):
