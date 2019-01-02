@@ -6,6 +6,14 @@ from .runtimeinfo import RuntimeState, TaskState
 from .trace import TaskAssignTraceEvent
 
 
+class InvalidClusterException(Exception):
+    pass
+
+
+def is_cluster_valid(graph, workers):
+    return all(any(w for w in workers if w.cpus >= t.cpus) for t in graph.tasks)
+
+
 class Simulator:
 
     def __init__(self,
@@ -16,6 +24,9 @@ class Simulator:
                  min_scheduling_interval=None,
                  scheduling_time=None,
                  trace=False):
+        if not is_cluster_valid(task_graph, workers):
+            raise InvalidClusterException()
+
         self.workers = workers
         self.task_graph = task_graph
         self.netmodel = netmodel

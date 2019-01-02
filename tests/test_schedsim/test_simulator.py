@@ -6,7 +6,8 @@ from schedsim.common import TaskGraph
 from schedsim.communication import SimpleNetModel
 from schedsim.schedulers import AllOnOneScheduler, DoNothingScheduler, SchedulerBase, \
     StaticScheduler
-from schedsim.simulator import TaskAssignment
+from schedsim.simulator import TaskAssignment, Simulator
+from schedsim.simulator.simulator import InvalidClusterException
 from schedsim.simulator.utils import estimate_schedule
 from schedsim.worker import Worker
 from .test_utils import do_sched_test
@@ -18,6 +19,17 @@ def test_simulator_empty_task_graph():
 
     scheduler = DoNothingScheduler()
     assert do_sched_test(task_graph, 1, scheduler) == 0
+
+
+def test_simulator_invalid_cluster():
+    task_graph = TaskGraph()
+    a = task_graph.new_task("A", cpus=1, output_size=1)
+    b = task_graph.new_task("B", cpus=2)
+    b.add_input(a)
+
+    scheduler = DoNothingScheduler()
+    with pytest.raises(InvalidClusterException):
+        Simulator(task_graph, [Worker(cpus=1)], scheduler, SimpleNetModel())
 
 
 def test_simulator_no_events():
