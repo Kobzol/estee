@@ -27,7 +27,7 @@ def estimate_schedule(schedule, graph, netmodel):
                netmodel.bandwidth)
         rt = worker_estimate_earliest_time(worker, task, time)
         start = time + max(rt, dta)
-        finish = start + task.expected_duration
+        finish = start + (task.expected_duration or 1)
         worker.running_tasks[task] = RunningTask(task, start)
         task_push(finish, task, "end")
 
