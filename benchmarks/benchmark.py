@@ -1,6 +1,7 @@
 import argparse
 import collections
 import itertools
+import linecache
 import multiprocessing
 import os
 import random
@@ -9,6 +10,7 @@ import sys
 import threading
 import time
 import traceback
+import tracemalloc
 
 import numpy
 import pandas as pd
@@ -104,10 +106,37 @@ Instance = collections.namedtuple("Instance",
                                    "scheduler_name", "imode", "min_sched_interval", "sched_time",
                                    "count"))
 
+def display_top(snapshot, key_type='lineno', limit=10):
+    snapshot = snapshot.filter_traces((
+        tracemalloc.Filter(False, "<frozen importlib._bootstrap>"),
+        tracemalloc.Filter(False, "<unknown>"),
+    ))
+    top_stats = snapshot.statistics(key_type)
+
+    print("Top %s lines" % limit)
+    for index, stat in enumerate(top_stats[:limit], 1):
+        frame = stat.traceback[0]
+        # replace "/path/to/module/file.py" with "module/file.py"
+        filename = os.sep.join(frame.filename.split(os.sep)[-2:])
+        print("#%s: %s:%s: %.1f KiB"
+              % (index, filename, frame.lineno, stat.size / 1024))
+        line = linecache.getline(frame.filename, frame.lineno).strip()
+        if line:
+            print('    %s' % line)
+
+    other = top_stats[limit:]
+    if other:
+        size = sum(stat.size for stat in other)
+        print("%s other: %.1f KiB" % (len(other), size / 1024))
+    total = sum(stat.size for stat in top_stats)
+    print("Total allocated size: %.1f KiB" % (total / 1024))
+
 
 def run_single_instance(instance):
     time.sleep(1)
     inf = 2**32
+
+    #tracemalloc.start()
 
     def create_worker(wargs):
         if instance.netmodel == "simple":
@@ -121,7 +150,10 @@ def run_single_instance(instance):
     simulator = Simulator(instance.graph, workers, scheduler, netmodel)
 
     try:
-        return simulator.run(), time.monotonic() - begin_time
+        res = simulator.run(), time.monotonic() - begin_time
+        #snapshot = tracemalloc.take_snapshot()
+        #display_top(snapshot)
+        return res
     except Exception as e:
         traceback.print_exc()
         print("ERROR INSTANCE: {}".format(instance), file=sys.stderr)

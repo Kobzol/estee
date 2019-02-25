@@ -10,7 +10,7 @@ from ..simulator import TaskAssignment
 class QueueScheduler(SchedulerBase):
 
     def __init__(self):
-        self.ready = []
+        self.ready = set()
         self.queue = None
 
     def init(self, simulator):
@@ -24,7 +24,7 @@ class QueueScheduler(SchedulerBase):
         raise NotImplementedError()
 
     def schedule(self, new_ready, new_finished):
-        self.ready += new_ready
+        self.ready.update(new_ready)
         results = []
         free_cpus = np.zeros(len(self.simulator.workers))
         workers = self.simulator.workers
