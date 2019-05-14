@@ -22,7 +22,7 @@ from estee.schedulers.camp import Camp2Scheduler
 from estee.schedulers.clustering import LcScheduler
 from estee.schedulers.genetic import GeneticScheduler
 from estee.schedulers.others import BlevelScheduler, DLSScheduler, ETFScheduler, MCPGTScheduler, \
-    MCPScheduler, TlevelScheduler
+    MCPScheduler, TlevelScheduler, RandomHeuristicScheduler
 from estee.schedulers.queue import BlevelGtScheduler, RandomGtScheduler, TlevelGtScheduler
 from estee.serialization.dask_json import json_deserialize, json_serialize
 from estee.simulator import MaxMinFlowNetModel, SimpleNetModel
@@ -49,6 +49,7 @@ SCHEDULERS = {
     "tlevel": TlevelScheduler,
     "tlevel-gt": TlevelGtScheduler,
     "random": RandomAssignScheduler,
+    "random-heuristic": RandomHeuristicScheduler,
     "random-gt": RandomGtScheduler,
     "dls": DLSScheduler,
     "etf": ETFScheduler,

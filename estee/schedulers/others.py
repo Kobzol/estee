@@ -2,6 +2,7 @@ import itertools
 import random
 
 from estee.schedulers.queue import GreedyTransferQueueScheduler
+from estee.simulator import TaskAssignment
 from .scheduler import SchedulerBase, Update
 from .utils import compute_alap, compute_b_level_duration, compute_t_level_duration, \
     get_size_estimate, schedule_all, transfer_cost_parallel, \
@@ -203,3 +204,40 @@ class TlevelScheduler(StaticSortScheduler):
 
     def sort_tasks(self, tasks):
         return sorted(tasks, key=lambda t: self.t_level[t])
+
+
+class RandomHeuristicScheduler(SchedulerBase):
+    def __init__(self):
+        super().__init__("RandomHeuristic", "0", task_start_notification=True)
+        self.tasks = {}
+
+    def sort_tasks(self, tasks):
+        randomized = list(range(len(tasks)))
+        random.shuffle(randomized)
+        return dict(zip(tasks, randomized))
+
+    def schedule(self, update):
+        if update.graph_changed:
+            self.tasks = self.sort_tasks(self.task_graph.tasks.values())
+
+        update_worker_occupancy(self.workers, update)
+
+        schedules = []
+        worker_assignments = {}
+
+        for task in sorted(update.new_ready_tasks, key=lambda t: self.tasks[t]):
+            worker = min(self.workers.values(),
+                         key=lambda w: self.calculate_cost(w, task, worker_assignments.get(w, [])))
+            worker_assignments.setdefault(worker, []).append(task)
+            schedules.append(TaskAssignment(worker, task))
+
+        apply_schedule(self, schedules)
+
+    def calculate_cost(self, worker, task, worker_assignments):
+        if task.cpus > worker.cpus:
+            return 10e10
+
+        bandwidth = self.network_bandwidth
+        transfer = transfer_cost_parallel(self.task_graph, worker, task) / bandwidth
+        computation = worker_estimate_earliest_time(worker, task, self.now(), worker_assignments)
+        return max(computation, transfer)
