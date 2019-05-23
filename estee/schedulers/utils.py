@@ -241,18 +241,23 @@ def worker_estimate_earliest_time(worker: SchedulerWorker, task: SchedulerTask,
         index += 1
         free_cpus -= t.cpus
     assignments = deque(worker.scheduled_tasks + worker_assignments)
-
     clock = now
-    while free_cpus < task.cpus:
-        (finish_time, _, t) = heappop(runqueue)
-        clock = finish_time
-        free_cpus += t.cpus
+
+    def pop_assignments():
+        nonlocal free_cpus, index
         while assignments and free_cpus >= assignments[0].cpus:
             heappush(runqueue,
                      (clock + (assignments[0].expected_duration or 1), index, assignments[0]))
             index += 1
             free_cpus -= assignments[0].cpus
             assignments.popleft()
+    pop_assignments()
+
+    while free_cpus < task.cpus:
+        (finish_time, _, t) = heappop(runqueue)
+        clock = finish_time
+        free_cpus += t.cpus
+        pop_assignments()
     return clock - now
 
 

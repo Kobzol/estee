@@ -154,17 +154,21 @@ class StaticSortScheduler(SchedulerBase):
     def schedule(self, update):
         if update.graph_changed:
             self.recalculate()
+        update_worker_occupancy(self.workers, update)
 
-        for assignment in schedule_all(self.workers.values(), update.new_ready_tasks,
-                                       lambda w, t, a: self.find_assignment(w, t, a)):
+        sorted_tasks = self.sort_tasks(update.new_ready_tasks)
+        index = 0
+
+        def find_assignment(workers, tasks, worker_assignments):
+            nonlocal index
+            task = sorted_tasks[index]
+            index += 1
+            return (min(workers, key=lambda w: self.calculate_cost(w, task,
+                                                                   worker_assignments.get(w, []))),
+                    task)
+
+        for assignment in schedule_all(self.workers.values(), list(sorted_tasks), find_assignment):
             self.assign(assignment.worker, assignment.task)
-
-    def find_assignment(self, workers, tasks, worker_assignments):
-        tasks = self.sort_tasks(tasks)
-        task = tasks[0]
-        return (min(workers, key=lambda w: self.calculate_cost(w, task,
-                                                               worker_assignments.get(w, []))),
-                task)
 
     def calculate_cost(self, worker, task, worker_assignments):
         if task.cpus > worker.cpus:

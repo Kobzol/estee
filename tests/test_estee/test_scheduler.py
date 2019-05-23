@@ -97,23 +97,23 @@ def test_scheduler_camp(plan1):
 
 
 def test_scheduler_dls(plan1):
-    assert do_sched_test(plan1, 2, DLSScheduler(), SimpleNetModel()) == 15
+    assert do_sched_test(plan1, 2, DLSScheduler(), SimpleNetModel()) == 14
 
 
 def test_scheduler_mcp(plan1):
-    assert do_sched_test(plan1, 2, MCPScheduler(), SimpleNetModel()) == 15
+    assert do_sched_test(plan1, 2, MCPScheduler(), SimpleNetModel()) == 16
 
 
 def test_scheduler_etf(plan1):
-    assert do_sched_test(plan1, 2, ETFScheduler(), SimpleNetModel()) == 15
+    assert do_sched_test(plan1, 2, ETFScheduler(), SimpleNetModel()) == 14
 
 
 def test_scheduler_blevel(plan1):
-    assert do_sched_test(plan1, 2, BlevelScheduler(), SimpleNetModel()) == 17
+    assert do_sched_test(plan1, 2, BlevelScheduler(), SimpleNetModel()) == 14
 
 
 def test_scheduler_tlevel(plan1):
-    assert do_sched_test(plan1, 2, TlevelScheduler(), SimpleNetModel()) == 17
+    assert do_sched_test(plan1, 2, TlevelScheduler(), SimpleNetModel()) == 14
 
 
 def test_scheduler_genetic(plan1):
