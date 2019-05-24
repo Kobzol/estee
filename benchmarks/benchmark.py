@@ -266,23 +266,23 @@ def compute(instances, timeout=0, dask_cluster=None):
     if not instances:
         return rows
 
+    from dask.distributed import Client
+
+    client = None
+
+    if dask_cluster:
+        client = Client(dask_cluster)
+        iterator = run_dask(instances, client)
+    else:
+        pool = multiprocessing.Pool(initializer=init_worker)
+        iterator = run_multiprocessing(pool, instances)
+
+    if timeout:
+        print("Timeout set to {} seconds".format(timeout))
+
     def run():
         counter = 0
         try:
-            from dask.distributed import Client
-
-            client = None
-
-            if dask_cluster:
-                client = Client(dask_cluster)
-                iterator = run_dask(instances, client)
-            else:
-                pool = multiprocessing.Pool(initializer=init_worker)
-                iterator = run_multiprocessing(pool, instances)
-
-            if timeout:
-                print("Timeout set to {} seconds".format(timeout))
-
             for instance, result in tqdm(zip(instances, iterator), total=len(instances)):
                 counter += 1
                 result = result.result()
