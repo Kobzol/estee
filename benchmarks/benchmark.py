@@ -13,6 +13,7 @@ import traceback
 import click
 import numpy
 import pandas as pd
+from distributed import as_completed
 from tqdm import tqdm
 
 from estee.common import imode
@@ -252,7 +253,7 @@ def run_dask(instances, client):
         instances[i] = inst
 
     results = client.map(process_dask, ((instance_to_graph[i], i) for i in instances))
-    return client.gather(results, errors='skip')
+    return as_completed(results)
 
 
 def init_worker():
@@ -284,6 +285,7 @@ def compute(instances, timeout=0, dask_cluster=None):
 
             for instance, result in tqdm(zip(instances, iterator), total=len(instances)):
                 counter += 1
+                result = result.result()
                 for r_time, r_runtime, r_transfer in result:
                     if r_time is not None:
                         rows.append((
