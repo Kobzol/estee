@@ -116,7 +116,7 @@ def run_computation(index, input_file, definition):
 
     dask_cluster = None
     if definition.get("dask"):
-        start_cluster(port=DASK_PORT, path=BENCHMARK_DIR, procs=20)
+        start_cluster(port=DASK_PORT, path=BENCHMARK_DIR, procs=22)
         dask_cluster = "{}:{}".format(socket.gethostname(), DASK_PORT)
 
     graph_frame = load_graphs([input])

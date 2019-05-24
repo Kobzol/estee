@@ -285,7 +285,9 @@ def compute(instances, timeout=0, dask_cluster=None):
         try:
             for instance, result in tqdm(zip(instances, iterator), total=len(instances)):
                 counter += 1
-                result = result.result()
+
+                if dask_cluster:
+                    result = result.result()
                 for r_time, r_runtime, r_transfer in result:
                     if r_time is not None:
                         rows.append((
