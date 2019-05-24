@@ -240,11 +240,7 @@ def process_dask(conf):
     return benchmark_scheduler(instance)
 
 
-def run_dask(instances, cluster):
-    from dask.distributed import Client
-
-    client = Client(cluster)
-
+def run_dask(instances, client):
     graphs = {}
     instance_to_graph = {}
     instances = list(instances)
@@ -256,7 +252,7 @@ def run_dask(instances, cluster):
         instances[i] = inst
 
     results = client.map(process_dask, ((instance_to_graph[i], i) for i in instances))
-    return client.gather(results)
+    return client.gather(results, errors='skip')
 
 
 def init_worker():
@@ -269,18 +265,23 @@ def compute(instances, timeout=0, dask_cluster=None):
     if not instances:
         return rows
 
-    if dask_cluster:
-        iterator = run_dask(instances, dask_cluster)
-    else:
-        pool = multiprocessing.Pool(initializer=init_worker)
-        iterator = run_multiprocessing(pool, instances)
-
-    if timeout:
-        print("Timeout set to {} seconds".format(timeout))
-
     def run():
         counter = 0
         try:
+            from dask.distributed import Client
+
+            client = None
+
+            if dask_cluster:
+                client = Client(dask_cluster)
+                iterator = run_dask(instances, client)
+            else:
+                pool = multiprocessing.Pool(initializer=init_worker)
+                iterator = run_multiprocessing(pool, instances)
+
+            if timeout:
+                print("Timeout set to {} seconds".format(timeout))
+
             for instance, result in tqdm(zip(instances, iterator), total=len(instances)):
                 counter += 1
                 for r_time, r_runtime, r_transfer in result:
@@ -300,9 +301,10 @@ def compute(instances, timeout=0, dask_cluster=None):
                             r_runtime,
                             r_transfer
                         ))
-        except:
+        except Exception:
             print("Benchmark interrupted, iterated {} instances. Writing intermediate results"
                   .format(counter))
+            traceback.print_exc()
 
     if timeout:
         thread = threading.Thread(target=run)
