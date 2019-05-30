@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import traceback
+from typing import List
 
 import click
 import numpy
@@ -29,19 +30,6 @@ from estee.serialization.dask_json import json_deserialize, json_serialize
 from estee.simulator import MaxMinFlowNetModel, SimpleNetModel
 from estee.simulator import Simulator, Worker
 from estee.simulator.trace import FetchEndTraceEvent
-
-
-def generate_seed():
-    seed = os.getpid() * time.time()
-    for b in os.urandom(4):
-        seed *= b
-    seed = int(seed) % 2**32
-    random.seed(seed)
-    numpy.random.seed(seed)
-
-
-generate_seed()
-
 
 SCHEDULERS = {
     "single": AllOnOneScheduler,
@@ -123,11 +111,31 @@ COLUMNS = ["graph_set",
            "execution_time",
            "total_transfer"]
 
-Instance = collections.namedtuple("Instance",
-                                  ("graph_set", "graph_name", "graph_id", "graph",
-                                   "cluster_name", "bandwidth", "netmodel",
-                                   "scheduler_name", "imode", "min_sched_interval", "sched_time",
-                                   "count"))
+
+def generate_seed():
+    seed = os.getpid() * time.time()
+    for b in os.urandom(4):
+        seed *= b
+    seed = int(seed) % 2**32
+    random.seed(seed)
+    numpy.random.seed(seed)
+
+
+def init_worker():
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+
+generate_seed()
+
+
+BenchmarkInstance = collections.namedtuple(
+    "BenchmarkInstance", ("id", "graph_set", "graph_name", "graph_id", "graph",
+                          "cluster_name", "bandwidth", "netmodel",
+                          "scheduler_name", "imode", "min_sched_interval", "sched_time",
+                          "count"))
+
+BenchmarkResult = collections.namedtuple(
+    "BenchmarkResult", ("makespan", "runtime", "transfer"))
 
 
 class BenchmarkConfig:
@@ -162,7 +170,7 @@ class BenchmarkConfig:
             graph = BenchmarkConfig.graph_cache[g["graph_id"]][mode]
 
             (min_sched_interval, sched_time) = SCHED_TIMINGS[sched_timing]
-            instance = Instance(
+            instance = BenchmarkInstance(0,
                 g["graph_set"], g["graph_name"], g["graph_id"], graph,
                 cluster_name, BANDWIDTHS[bandwidth], netmodel,
                 scheduler_name,
@@ -193,8 +201,47 @@ REPEAT    : {repeat}
         )
 
 
-def run_single_instance(instance):
-    time.sleep(1)
+class BenchmarkEnvironment:
+    def create_iterator(self, instances: List[BenchmarkInstance]):
+        raise NotImplementedError()
+
+    def postprocess_result(self, result):
+        return result
+
+
+class ProcessEnvironment(BenchmarkEnvironment):
+    def __init__(self):
+        self.pool = multiprocessing.Pool(initializer=init_worker)
+
+    def create_iterator(self, instances):
+        return self.pool.imap(process_multiprocessing, instances)
+
+
+class DaskEnviroment(BenchmarkEnvironment):
+    def __init__(self, dask_cluster):
+        from dask.distributed import Client
+
+        self.client = Client(dask_cluster)
+
+    def create_iterator(self, instances: List[BenchmarkInstance]):
+        graphs = {}
+        instance_to_graph = {}
+        instances = list(instances)
+        for (i, instance) in enumerate(instances):
+            if instance.graph not in graphs:
+                graphs[instance.graph] = self.client.scatter([instance.graph], broadcast=True)[0]
+            inst = instance._replace(graph=None)
+            instance_to_graph[inst] = graphs[instance.graph]
+            instances[i] = inst
+
+        return as_completed(
+            self.client.map(process_dask, ((instance_to_graph[i], i) for i in instances)))
+
+    def postprocess_result(self, result):
+        return result.result()
+
+
+def run_single_instance(instance: BenchmarkInstance) -> BenchmarkResult:
     inf = 2**32
 
     def create_worker(wargs):
@@ -207,6 +254,7 @@ def run_single_instance(instance):
     netmodel = NETMODELS[instance.netmodel](instance.bandwidth)
     scheduler = SCHEDULERS[instance.scheduler_name]()
     simulator = Simulator(instance.graph, workers, scheduler, netmodel, trace=True)
+
     try:
         sim_time = simulator.run()
         runtime = time.monotonic() - begin_time
@@ -214,25 +262,21 @@ def run_single_instance(instance):
         for e in simulator.trace_events:
             if isinstance(e, FetchEndTraceEvent):
                 transfer += e.output.size
-        return sim_time, runtime, transfer
-    except Exception:
+        return BenchmarkResult(sim_time, runtime, transfer)
+    except:
         traceback.print_exc()
         print("ERROR INSTANCE: {}".format(instance), file=sys.stderr)
-        return None, None, None
+        return None
 
 
 def benchmark_scheduler(instance):
-    return [run_single_instance(instance)
-            for _ in range(instance.count)]
+    return (instance.id, [run_single_instance(instance)
+            for _ in range(instance.count)])
 
 
 def process_multiprocessing(instance):
     instance = instance._replace(graph=json_deserialize(instance.graph))
     return benchmark_scheduler(instance)
-
-
-def run_multiprocessing(pool, instances):
-    return pool.imap(process_multiprocessing, instances)
 
 
 def process_dask(conf):
@@ -241,41 +285,19 @@ def process_dask(conf):
     return benchmark_scheduler(instance)
 
 
-def run_dask(instances, client):
-    graphs = {}
-    instance_to_graph = {}
-    instances = list(instances)
-    for (i, instance) in enumerate(instances):
-        if instance.graph not in graphs:
-            graphs[instance.graph] = client.scatter([instance.graph], broadcast=True)[0]
-        inst = instance._replace(graph=None)
-        instance_to_graph[inst] = graphs[instance.graph]
-        instances[i] = inst
-
-    results = client.map(process_dask, ((instance_to_graph[i], i) for i in instances))
-    return as_completed(results)
-
-
-def init_worker():
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
-
-
 def compute(instances, timeout=0, dask_cluster=None):
     rows = []
 
     if not instances:
         return rows
 
-    from dask.distributed import Client
-
-    client = None
+    for i, instance in enumerate(instances):
+        instances[i] = instance._replace(id=i)
 
     if dask_cluster:
-        client = Client(dask_cluster)
-        iterator = run_dask(instances, client)
+        env = DaskEnviroment(dask_cluster)
     else:
-        pool = multiprocessing.Pool(initializer=init_worker)
-        iterator = run_multiprocessing(pool, instances)
+        env = ProcessEnvironment()
 
     if timeout:
         print("Timeout set to {} seconds".format(timeout))
@@ -283,13 +305,14 @@ def compute(instances, timeout=0, dask_cluster=None):
     def run():
         counter = 0
         try:
-            for instance, result in tqdm(zip(instances, iterator), total=len(instances)):
+            iterator = env.create_iterator(instances)
+            for item in tqdm(iterator, total=len(instances)):
                 counter += 1
 
-                if dask_cluster:
-                    result = result.result()
-                for r_time, r_runtime, r_transfer in result:
-                    if r_time is not None:
+                (id, results) = env.postprocess_result(item)
+                instance = instances[id]
+                for result in results:
+                    if result is not None:
                         rows.append((
                             instance.graph_set,
                             instance.graph_name,
@@ -301,14 +324,14 @@ def compute(instances, timeout=0, dask_cluster=None):
                             instance.imode,
                             instance.min_sched_interval,
                             instance.sched_time,
-                            r_time,
-                            r_runtime,
-                            r_transfer
+                            result.makespan,
+                            result.runtime,
+                            result.transfer
                         ))
-        except Exception:
+        except:
+            traceback.print_exc()
             print("Benchmark interrupted, iterated {} instances. Writing intermediate results"
                   .format(counter))
-            traceback.print_exc()
 
     if timeout:
         thread = threading.Thread(target=run)
